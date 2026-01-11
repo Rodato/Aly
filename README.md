@@ -90,9 +90,8 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus API keys
+# Crear archivo .env con tus credenciales
+# (ver sección de Configuración para detalles)
 ```
 
 ### 2. Usar el RAG
@@ -146,21 +145,22 @@ python3 rag/testing/test_rag.py
 
 ## ⚙️ Configuración
 
-### Variables de Entorno (.env)
-```env
-# APIs
-OPENAI_API_KEY=tu_openai_key
-OPENROUTER_API_KEY=tu_openrouter_key
+### Variables de Entorno
 
-# MongoDB
-MONGODB_URI=mongodb+srv://usuario:password@cluster.mongodb.net/
-MONGODB_DB_NAME=embeddgins_puddle
-MONGODB_COLLECTION_NAME=embeddings_1
+El proyecto requiere un archivo `.env` en la raíz con las siguientes credenciales:
 
-# Supabase (opcional)
-SUPABASE_URL=tu_supabase_url
-SUPABASE_ANON_KEY=tu_supabase_key
-```
+**APIs requeridas:**
+- API key de OpenAI (para embeddings y procesamiento)
+- API key de OpenRouter (para agentes LLM)
+
+**Base de datos MongoDB:**
+- URI de conexión a MongoDB Atlas
+- Nombre de la base de datos
+- Nombre de la colección
+
+**Supabase (opcional, solo si usas memoria conversacional):**
+- URL del proyecto Supabase
+- Anon key de Supabase
 
 ### Dependencias Principales
 - `docling>=2.63.0` - Conversión avanzada PDF/DOCX
