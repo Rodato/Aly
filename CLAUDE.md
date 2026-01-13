@@ -3,9 +3,9 @@
 ## 🎯 Estado Actual del Proyecto
 
 **Proyecto**: Puddle Assistant - Sistema RAG para consulta inteligente de documentos
-**Fecha**: 2025-12-16 
-**Fase**: SISTEMA RAG COMPLETO Y OPERATIVO
-**Arquitectura**: MongoDB (RAG) + Supabase (usuarios/conversaciones)
+**Fecha**: 2026-01-12
+**Fase**: BOT WHATSAPP FUNCIONANDO EN PRODUCCIÓN ✅
+**Arquitectura**: MongoDB (RAG) + Supabase (usuarios/conversaciones) + WhatsApp (Twilio)
 
 ## 🏗️ Arquitectura del Sistema
 
@@ -22,37 +22,78 @@
 ## 🤖 Sistema de Agentes MVP ALY
 
 ### **Estado: ✅ COMPLETAMENTE FUNCIONAL**
-- **Language Detection**: Automático ES/EN/PT
-- **Intent Router**: FACTUAL/PLAN/IDEATE/SENSITIVE/AMBIGUOUS  
+- **Language Detection**: Automático ES/EN/PT usando LLM
+- **Intent Router**: GREETING/FACTUAL/PLAN/IDEATE/SENSITIVE/AMBIGUOUS
 - **Specialized Agents**: RAG, Workshop, Brainstorming, SafeEdge, Fallback
+- **Filter Detection**: Detección automática de programas (MWB, P+, etc.) y categorías
+
+### **🆕 Sistema de GREETING (2026-01-12)**
+- ✅ Detección automática de saludos usando LLM (sin palabras clave)
+- ✅ Welcome messages en 3 idiomas (ES/EN/PT)
+- ✅ Integrado en flujo de orchestrator
+- ✅ Elimina duplicación de bienvenida en bot WhatsApp
 
 ### **Formato de Respuestas**
 - ✅ **Conversacional y natural** (formato robótico comentado)
 - ✅ **Tono**: Cálido, simple, inclusivo, no prescriptivo
 - ✅ **Validación**: "You know your group — adapt as needed"
 
-## 📱 WhatsApp Bot - ¡COMPLETADO!
+## 📱 WhatsApp Bot - ¡FUNCIONANDO EN PRODUCCIÓN! ✅
 
-### **✅ Estado: FUNCIONANDO COMPLETAMENTE**
-- **FastAPI bot**: `whatsapp/aly_bot.py` corriendo en puerto 8001
-- **Sistema ALY completo**: Todos los agentes integrados y funcionando
-- **Twilio**: Configurado con webhook
-- **ngrok**: Para exposición local
-- **Comando para ejecutar**: 
-  ```bash
-  cd whatsapp && nohup python aly_bot.py > aly_bot.log 2>&1 &
-  ngrok http 8001
-  ```
+### **✅ Estado: COMPLETAMENTE OPERATIVO (2026-01-12)**
+- **Bot**: `whatsapp/aly_bot_with_memory.py` en puerto 8002
+- **Sistema ALY**: Todos los agentes + GREETING + Memoria Supabase
+- **Twilio**: Sandbox configurado y funcionando
+- **Arquitectura**: Respuesta asíncrona (sin timeout de 15s)
+- **Entorno virtual**: `venv/` configurado con todas las dependencias
 
-### **🔧 Para reactivar el bot:**
-**Bot Básico:**
-1. `cd whatsapp && python aly_bot.py` (puerto 8001)
+### **🚀 Arquitectura Asíncrona Implementada**
+**Problema resuelto**: Bot tardaba 20+ segundos procesando → Twilio timeout
+**Solución**:
+- Webhook responde a Twilio inmediatamente (200 OK vacío)
+- ALY procesa en background usando `asyncio.create_task()`
+- Bot envía respuesta activamente vía Twilio Client API
+- ✅ Sin timeouts, mensajes llegan siempre
 
-**Bot con Memoria Supabase:**
-1. `cd whatsapp && python aly_bot_with_memory.py` (puerto 8002)
-2. `ngrok http 8002` y copiar URL
-3. Actualizar webhook en Twilio Console
-4. ¡ALY responde con memoria conversacional!
+### **🔧 Para iniciar el bot:**
+```bash
+# Terminal 1: Iniciar bot
+source venv/bin/activate
+cd whatsapp
+python3 aly_bot_with_memory.py
+
+# Terminal 2: Exponer con ngrok
+ngrok http 8002
+# Copiar URL https y actualizar en Twilio Console:
+# https://xxxxx.ngrok.io/webhook/whatsapp
+```
+
+### **⚙️ Variables de entorno requeridas (.env):**
+```bash
+# Twilio (Sandbox o número comprado)
+TWILIO_ACCOUNT_SID=<tu_account_sid>
+TWILIO_AUTH_TOKEN=<tu_auth_token>
+TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
+
+# Supabase
+SUPABASE_URL=<tu_supabase_url>
+SUPABASE_KEY=<tu_anon_key>
+
+# OpenRouter (para agentes)
+OPENROUTER_API_KEY=<tu_key>
+
+# MongoDB
+MONGODB_CONNECTION_STRING=<tu_connection_string>
+```
+
+### **📊 Flujo del Bot:**
+1. Usuario envía mensaje → Twilio webhook
+2. Bot responde 200 OK inmediatamente
+3. Background: Language → Filter Detection → Intent Router
+4. Intent GREETING → Welcome message
+5. Intent FACTUAL/PLAN/IDEATE → Agentes especializados
+6. Bot envía respuesta activamente vía Twilio API
+7. Todo se guarda en Supabase (memoria conversacional)
 
 ## 🧠 Sistema de Memoria Supabase - ¡COMPLETADO!
 
@@ -76,22 +117,70 @@
 
 ## 📋 Tareas Pendientes
 
+### **Prioridad Alta:**
+1. **Ajustar recuperación de información RAG**
+   - Optimizar búsqueda semántica
+   - Mejorar relevancia de chunks
+   - Ajustar filtros de programas
+
+2. **Migrar de Sandbox a Número Twilio Comprado**
+   - Configurar número comprado
+   - Actualizar webhook
+   - Probar en producción
+
+### **Backlog:**
 1. **Procesar 2 documentos fallidos:**
    - `Addressing_the_impact_of_Masculinity_Influencers_on_Teenage_Boys...`
    - `Manual_de_Facilitación_Programa_Apapáchar.pdf`
 
-2. **Testing final WhatsApp + Supabase** (listo para implementar)
+2. **Optimizaciones de performance:**
+   - Reducir tiempo de respuesta RAG (actualmente 20-25s)
+   - Cache de embeddings frecuentes
+   - Optimizar queries MongoDB
 
 ## 🚀 Comandos Clave
 
-**Ejecutar Sistema MVP ALY:**
+**Ejecutar Bot WhatsApp (PRODUCCIÓN):**
 ```bash
-cd /Users/daniel/Desktop/Dev/puddleAsistant/mvp
-python agent_console.py
+source venv/bin/activate
+cd whatsapp
+python3 aly_bot_with_memory.py
+# En otra terminal: ngrok http 8002
+```
+
+**Ejecutar Sistema MVP ALY (consola local):**
+```bash
+cd mvp
+python3 agent_console.py
+```
+
+**Test de GREETING:**
+```bash
+cd mvp
+python3 test_greeting.py
 ```
 
 **RAG Simple MongoDB:**
 ```bash
-cd /Users/daniel/Desktop/Dev/puddleAsistant/mongodb/scripts  
-python rag_console.py
+cd mongodb/scripts
+python3 rag_console.py
 ```
+
+## 🎉 Logros Recientes (2026-01-12)
+
+### **✅ Bot WhatsApp Funcionando Completamente**
+1. Sistema de GREETING implementado y funcionando
+2. Arquitectura asíncrona para evitar timeouts de Twilio
+3. Credenciales de Twilio correctas configuradas
+4. Memoria conversacional Supabase activa
+5. Todos los agentes (RAG, Workshop, Brainstorming, SafeEdge, Fallback) operativos
+6. Detección automática de idioma (ES/EN/PT)
+7. Filter Detection para programas y categorías
+
+### **🔧 Soluciones Técnicas Implementadas**
+- **Problema**: Bot tardaba 20+ segundos → Twilio timeout
+- **Solución**: Webhook responde inmediatamente, procesamiento en background
+- **Problema**: Mensaje de bienvenida duplicado
+- **Solución**: Orchestrator maneja GREETING, bot solo envía respuesta
+- **Problema**: Credenciales incorrectas de Twilio
+- **Solución**: Configurar Account SID y Auth Token correctos en .env

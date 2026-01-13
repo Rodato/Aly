@@ -96,11 +96,11 @@ def format_for_whatsapp(response: str) -> str:
     response = response.replace('##', '')
     response = response.replace('###', '')
     response = response.replace('- ', '• ')
-    
+
     # Limitar longitud para WhatsApp
     if len(response) > 1500:
         response = response[:1400] + "...\n\n💡 Puedes pedir más detalles si necesitas."
-    
+
     return response.strip()
 
 async def process_with_aly_and_memory(
@@ -160,45 +160,22 @@ async def process_with_aly_and_memory(
             'error': str(e)
         }
 
-@app.post("/webhook/whatsapp")
-async def whatsapp_webhook(
-    From: str = Form(...),
-    Body: str = Form(...),
-    MessageSid: str = Form(None)
+async def process_and_send_response(
+    phone_number: str,
+    message_body: str,
+    user_profile: object,
+    conversation: object,
+    twilio_message_sid: str
 ):
-    """Webhook principal para mensajes de WhatsApp con memoria"""
+    """Procesa el mensaje con ALY y envía la respuesta activamente via Twilio"""
     try:
-        # Extraer número y mensaje
-        phone_number = From.replace('whatsapp:', '')
-        message_body = Body.strip()
-        
-        logger.info(f"📱 Mensaje de {phone_number}: {message_body}")
-        
-        if not memory_manager:
-            logger.error("❌ Memory Manager no disponible")
-            resp = MessagingResponse()
-            resp.message("Sistema no disponible temporalmente. Intenta más tarde.")
-            return PlainTextResponse(str(resp), media_type="application/xml")
-        
-        # Obtener o crear usuario
-        user_profile = memory_manager.get_or_create_user(phone_number)
-        logger.info(f"👤 Usuario: {user_profile.id} ({user_profile.preferred_language})")
-        
-        # Obtener o crear conversación
-        conversation = memory_manager.get_or_create_conversation(
-            user_profile.id, 
-            phone_number, 
-            user_profile.preferred_language
-        )
-        logger.info(f"💬 Conversación: {conversation.id} (msg #{conversation.message_count + 1})")
-        
         # Procesar con ALY usando memoria
         result = await process_with_aly_and_memory(message_body, user_profile, conversation)
         
         # Extraer respuesta
         if result and 'answer' in result:
             response_text = result['answer']
-            
+
             # Actualizar idioma detectado si es diferente
             detected_language = result.get('language_detected', user_profile.preferred_language)
             if detected_language != user_profile.preferred_language:
@@ -207,7 +184,7 @@ async def whatsapp_webhook(
         else:
             response_text = "Lo siento, hubo un problema. ¿Puedes intentar de nuevo?"
             result = {'agent_type': 'error', 'language_detected': user_profile.preferred_language}
-        
+
         # Almacenar interacción en Supabase
         try:
             message_id = memory_manager.store_message_interaction(
@@ -222,9 +199,9 @@ async def whatsapp_webhook(
                 response_time_ms=result.get('response_time_ms', 0),
                 sources_used=result.get('sources', []),
                 rag_context=result.get('rag_context', {}),
-                twilio_message_sid=MessageSid
+                twilio_message_sid=twilio_message_sid
             )
-            
+
             # Crear entrada de memoria si es relevante
             if result.get('agent_type') in ['workshop', 'brainstorming', 'safe_edge']:
                 memory_type, memory_content, importance_score = create_memory_from_interaction(
@@ -233,7 +210,7 @@ async def whatsapp_webhook(
                     result.get('agent_type', 'unknown'),
                     result.get('intent', 'UNKNOWN')
                 )
-                
+
                 memory_manager.add_memory(
                     conversation_id=conversation.id,
                     user_id=user_profile.id,
@@ -242,30 +219,85 @@ async def whatsapp_webhook(
                     importance_score=importance_score
                 )
                 logger.info(f"🧠 Memoria creada: {memory_type} (importancia: {importance_score})")
-            
+
         except Exception as e:
             logger.error(f"⚠️ Error almacenando en Supabase: {e}")
-            # Continuar sin fallar el flujo principal
-        
-        # Formatear para WhatsApp
+
+        # Formatear y enviar respuesta activamente via Twilio
         formatted_response = format_for_whatsapp(response_text)
-        
-        # Crear respuesta TwiML
-        resp = MessagingResponse()
-        resp.message(formatted_response)
-        
-        logger.info(f"✅ Respuesta enviada a {phone_number} (agente: {result.get('agent_type', 'unknown')})")
-        
-        return PlainTextResponse(str(resp), media_type="application/xml")
-        
+
+        whatsapp_number = os.getenv('TWILIO_WHATSAPP_NUMBER')
+        twilio_client.messages.create(
+            body=formatted_response,
+            from_=whatsapp_number,
+            to=f"whatsapp:{phone_number}"
+        )
+
+        logger.info(f"✅ Respuesta enviada activamente a {phone_number} (agente: {result.get('agent_type', 'unknown')})")
+
+    except Exception as e:
+        logger.error(f"❌ Error procesando mensaje background: {e}")
+
+        # Enviar mensaje de error
+        try:
+            whatsapp_number = os.getenv('TWILIO_WHATSAPP_NUMBER')
+            twilio_client.messages.create(
+                body="Disculpa, tuve un problema técnico. ¿Puedes intentar de nuevo?",
+                from_=whatsapp_number,
+                to=f"whatsapp:{phone_number}"
+            )
+        except:
+            pass
+
+@app.post("/webhook/whatsapp")
+async def whatsapp_webhook(
+    From: str = Form(...),
+    Body: str = Form(...),
+    MessageSid: str = Form(None)
+):
+    """Webhook principal - responde inmediatamente y procesa en background"""
+    try:
+        # Extraer número y mensaje
+        phone_number = From.replace('whatsapp:', '')
+        message_body = Body.strip()
+
+        logger.info(f"📱 Mensaje de {phone_number}: {message_body}")
+
+        if not memory_manager:
+            logger.error("❌ Memory Manager no disponible")
+            resp = MessagingResponse()
+            resp.message("Sistema no disponible temporalmente.")
+            return PlainTextResponse(str(resp), media_type="application/xml")
+
+        # Obtener o crear usuario
+        user_profile = memory_manager.get_or_create_user(phone_number)
+        logger.info(f"👤 Usuario: {user_profile.id}")
+
+        # Obtener o crear conversación
+        conversation = memory_manager.get_or_create_conversation(
+            user_profile.id,
+            phone_number,
+            user_profile.preferred_language
+        )
+        logger.info(f"💬 Conversación: {conversation.id} (msg #{conversation.message_count + 1})")
+
+        # Lanzar procesamiento en background
+        asyncio.create_task(
+            process_and_send_response(
+                phone_number,
+                message_body,
+                user_profile,
+                conversation,
+                MessageSid
+            )
+        )
+
+        # Responder inmediatamente a Twilio (vacío - la respuesta se enviará activamente)
+        return PlainTextResponse("", media_type="text/plain")
+
     except Exception as e:
         logger.error(f"❌ Error en webhook: {e}")
-        
-        # Respuesta de error para el usuario
-        resp = MessagingResponse()
-        resp.message("Disculpa, tuve un problema técnico. ¿Puedes intentar de nuevo en un momento?")
-        
-        return PlainTextResponse(str(resp), media_type="application/xml")
+        return PlainTextResponse("", media_type="text/plain")
 
 @app.get("/health")
 async def health_check():

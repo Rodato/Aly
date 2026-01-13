@@ -92,44 +92,52 @@ class WorkshopAgent(BaseAgent):
     
     def _get_relevant_context(self, state: AgentState) -> Dict:
         """Obtiene contexto relevante de la base de conocimiento."""
-        
+
         if not self.rag_system:
             return {'chunks': [], 'sources': [], 'context_text': ''}
-        
+
         try:
             # Configurar idioma
             if state.language_config:
                 self.rag_system.session_language = state.language
                 self.rag_system.language_config = state.language_config
-            
-            # Buscar contexto relevante
-            chunks = self.rag_system.search_chunks(state.user_input, top_k=3)
-            
+
+            # Extraer filtros detectados (si existen)
+            filters = None
+            if state.metadata and 'detected_filters' in state.metadata:
+                filter_data = state.metadata['detected_filters']
+                if filter_data.get('has_filters'):
+                    filters = filter_data.get('mongodb_filters')
+                    self.logger.info(f"Aplicando filtros en Workshop: {filters}")
+
+            # Buscar contexto relevante (con filtros si existen)
+            chunks = self.rag_system.search_chunks(state.user_input, top_k=3, filters=filters)
+
             if not chunks:
                 return {'chunks': [], 'sources': [], 'context_text': ''}
-            
+
             # Formatear contexto para inspiración
             context_text = "\n\n".join([
                 f"**{chunk['chunk']['document_name']}**\n{chunk['chunk']['content']}"
                 for chunk in chunks[:2]  # Solo top 2 para no saturar
             ])
-            
+
             sources = []
             for item in chunks[:3]:
                 chunk = item['chunk']
                 sources.append({
                     "document": chunk['document_name'],
-                    "section": chunk['section_header'], 
+                    "section": chunk['section_header'],
                     "similarity": round(item['similarity'], 3),
                     "preview": chunk['content'][:150] + "..."
                 })
-            
+
             return {
                 'chunks': chunks,
                 'sources': sources,
                 'context_text': context_text
             }
-            
+
         except Exception as e:
             self.logger.warning(f"Error obteniendo contexto: {e}")
             return {'chunks': [], 'sources': [], 'context_text': ''}

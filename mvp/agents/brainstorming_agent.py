@@ -93,54 +93,62 @@ class BrainstormingAgent(BaseAgent):
     
     def _get_diverse_inspiration(self, state: AgentState) -> Dict:
         """Obtiene inspiración diversa de múltiples perspectivas."""
-        
+
         if not self.rag_system:
             return {'chunks': [], 'sources': [], 'context_text': ''}
-        
+
         try:
             # Configurar idioma
             if state.language_config:
                 self.rag_system.session_language = state.language
                 self.rag_system.language_config = state.language_config
-            
-            # Buscar inspiración con diferentes enfoques
-            primary_chunks = self.rag_system.search_chunks(state.user_input, top_k=2)
-            
+
+            # Extraer filtros detectados (si existen)
+            filters = None
+            if state.metadata and 'detected_filters' in state.metadata:
+                filter_data = state.metadata['detected_filters']
+                if filter_data.get('has_filters'):
+                    filters = filter_data.get('mongodb_filters')
+                    self.logger.info(f"Aplicando filtros en Brainstorming: {filters}")
+
+            # Buscar inspiración con diferentes enfoques (con filtros si existen)
+            primary_chunks = self.rag_system.search_chunks(state.user_input, top_k=2, filters=filters)
+
             # Buscar perspectivas adicionales con términos relacionados
             related_terms = self._generate_related_terms(state.user_input)
             additional_chunks = []
-            
+
             for term in related_terms[:2]:  # Solo 2 términos adicionales
-                chunks = self.rag_system.search_chunks(term, top_k=1)
+                chunks = self.rag_system.search_chunks(term, top_k=1, filters=filters)
                 if chunks:
                     additional_chunks.extend(chunks)
-            
+
             # Combinar todas las fuentes de inspiración
             all_chunks = primary_chunks + additional_chunks
-            
+
             if not all_chunks:
                 return {'chunks': [], 'sources': [], 'context_text': ''}
-            
+
             # Formatear inspiración para brainstorming
             inspiration_text = self._format_inspiration_sources(all_chunks[:4])
-            
+
             sources = []
             for item in all_chunks[:4]:
                 chunk = item['chunk']
                 sources.append({
                     "document": chunk['document_name'],
-                    "section": chunk['section_header'], 
+                    "section": chunk['section_header'],
                     "similarity": round(item['similarity'], 3),
                     "preview": chunk['content'][:100] + "...",
                     "inspiration_type": "primary" if item in primary_chunks else "lateral"
                 })
-            
+
             return {
                 'chunks': all_chunks,
                 'sources': sources,
                 'context_text': inspiration_text
             }
-            
+
         except Exception as e:
             self.logger.warning(f"Error obteniendo inspiración: {e}")
             return {'chunks': [], 'sources': [], 'context_text': ''}

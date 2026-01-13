@@ -81,7 +81,8 @@ class ModeDetectionAgent(BaseAgent):
 User input: "{user_input}"
 
 Intent Classification:
-- PLAN → User wants to adapt or implement something they already know  
+- GREETING → User is just saying hello/hi or starting a conversation with a simple greeting
+- PLAN → User wants to adapt or implement something they already know
 - IDEATE → User wants new ideas, variations, or inspiration
 - FACTUAL → User seeks specific information, definitions, or facts from curriculum
 - AMBIGUOUS → Input is unclear or too broad
@@ -89,14 +90,16 @@ Intent Classification:
 
 Respond with ONLY valid JSON:
 {{
-    "intent": "PLAN|IDEATE|FACTUAL|AMBIGUOUS|SENSITIVE",
+    "intent": "GREETING|PLAN|IDEATE|FACTUAL|AMBIGUOUS|SENSITIVE",
     "confidence": 0.0-1.0,
     "reasoning": "brief explanation"
 }}
 
 Examples:
+- "Hello" → GREETING
+- "Hi!" → GREETING
 - "How do I adapt this activity for younger kids?" → PLAN
-- "Give me creative ideas for engaging boys" → IDEATE  
+- "Give me creative ideas for engaging boys" → IDEATE
 - "What is gender-transformative education?" → FACTUAL
 - "Help me with my class" → AMBIGUOUS
 - "How do I handle students with trauma?" → SENSITIVE"""
@@ -107,6 +110,7 @@ Examples:
 Entrada do usuário: "{user_input}"
 
 Classificação de Intenção:
+- GREETING → Usuário está apenas dizendo olá/oi ou iniciando uma conversa com uma saudação simples
 - PLAN → Usuário quer adaptar ou implementar algo que já conhece
 - IDEATE → Usuário quer novas ideias, variações ou inspiração
 - FACTUAL → Usuário busca informação específica, definições, ou fatos do currículo
@@ -115,12 +119,14 @@ Classificação de Intenção:
 
 Responda APENAS com JSON válido:
 {{
-    "intent": "PLAN|IDEATE|FACTUAL|AMBIGUOUS|SENSITIVE",
+    "intent": "GREETING|PLAN|IDEATE|FACTUAL|AMBIGUOUS|SENSITIVE",
     "confidence": 0.0-1.0,
     "reasoning": "explicação breve"
 }}
 
 Exemplos:
+- "Olá" → GREETING
+- "Oi!" → GREETING
 - "Como adapto esta atividade para crianças menores?" → PLAN
 - "Me dê ideias criativas para engajar meninos" → IDEATE
 - "O que é educação transformadora de gênero?" → FACTUAL
@@ -133,6 +139,7 @@ Exemplos:
 Entrada del usuario: "{user_input}"
 
 Clasificación de Intención:
+- GREETING → Usuario está solo diciendo hola o iniciando una conversación con un saludo simple
 - PLAN → Usuario quiere adaptar o implementar algo que ya conoce
 - IDEATE → Usuario quiere nuevas ideas, variaciones o inspiración
 - FACTUAL → Usuario busca información específica, definiciones, o hechos del currículo
@@ -141,12 +148,14 @@ Clasificación de Intención:
 
 Responde SOLO con JSON válido:
 {{
-    "intent": "PLAN|IDEATE|FACTUAL|AMBIGUOUS|SENSITIVE",
+    "intent": "GREETING|PLAN|IDEATE|FACTUAL|AMBIGUOUS|SENSITIVE",
     "confidence": 0.0-1.0,
     "reasoning": "explicación breve"
 }}
 
 Ejemplos:
+- "Hola" → GREETING
+- "Hola!" → GREETING
 - "¿Cómo adapto esta actividad para niños más pequeños?" → PLAN
 - "Dame ideas creativas para involucrar a los niños" → IDEATE
 - "¿Qué es la educación transformadora de género?" → FACTUAL
@@ -184,7 +193,7 @@ Ejemplos:
                 parsed = json.loads(json_str)
                 
                 # Validar formato
-                valid_intents = ['PLAN', 'IDEATE', 'FACTUAL', 'AMBIGUOUS', 'SENSITIVE']
+                valid_intents = ['GREETING', 'PLAN', 'IDEATE', 'FACTUAL', 'AMBIGUOUS', 'SENSITIVE']
                 intent_field = parsed.get('intent') or parsed.get('mode')  # backward compatibility
                 
                 if intent_field and intent_field in valid_intents:

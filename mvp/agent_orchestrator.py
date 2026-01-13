@@ -10,12 +10,14 @@ from langgraph.graph import StateGraph, END
 
 from agents.base_agent import AgentState
 from agents.language_agent import LanguageAgent
+from agents.filter_detection_agent import FilterDetectionAgent
 from agents.mode_detection_agent import ModeDetectionAgent
 from agents.rag_agent import RAGAgent
 from agents.workshop_agent import WorkshopAgent
 from agents.brainstorming_agent import BrainstormingAgent
 from agents.safe_edge_agent import SafeEdgeAgent
 from agents.fallback_agent import FallbackAgent
+from config.welcome_messages import get_welcome_message
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +27,7 @@ class GraphState(TypedDict):
     user_input: str
     language: str
     language_config: Dict
+    metadata: Dict  # NEW: metadata con filtros detectados
     mode: str
     mode_confidence: float
     response: str
@@ -44,71 +47,99 @@ class AgentOrchestrator:
     def __init__(self):
         # Inicializar agentes educativos
         self.language_agent = LanguageAgent()
+        self.filter_agent = FilterDetectionAgent()  # Filter Detection (NEW)
         self.mode_agent = ModeDetectionAgent()  # Intent Router
         self.rag_agent = RAGAgent()              # FACTUAL queries
         self.workshop_agent = WorkshopAgent()    # PLAN queries (adapt/implement)
         self.brainstorming_agent = BrainstormingAgent()  # IDEATE queries (new ideas)
         self.safe_edge_agent = SafeEdgeAgent()   # SENSITIVE topics
         self.fallback_agent = FallbackAgent()   # AMBIGUOUS inputs
-        
+
         # Crear grafo de workflow educativo
         self.workflow = self._create_workflow()
         self.app = self.workflow.compile()
-        
+
         logger.info("🎓 Educational Agent Orchestrator inicializado")
     
     def _create_workflow(self) -> StateGraph:
         """Crea el workflow de agentes."""
-        
+
         workflow = StateGraph(GraphState)
-        
+
         # Agregar nodos educativos
         workflow.add_node("detect_language", self._language_node)
+        workflow.add_node("detect_filters", self._filter_node)       # Filter Detection (NEW)
         workflow.add_node("detect_intent", self._intent_node)  # Intent Router
+        workflow.add_node("greeting_response", self._greeting_node)   # Welcome Message
         workflow.add_node("factual_response", self._factual_node)     # RAG Agent
-        workflow.add_node("plan_response", self._plan_node)           # Workshop Agent  
+        workflow.add_node("plan_response", self._plan_node)           # Workshop Agent
         workflow.add_node("ideate_response", self._ideate_node)       # Brainstorming Agent
         workflow.add_node("sensitive_response", self._sensitive_node) # Safe Edge Agent
         workflow.add_node("clarify_response", self._clarify_node)     # Fallback Agent
-        
+
         # Definir flujo educativo
         workflow.set_entry_point("detect_language")
-        
-        # Language -> Intent Detection (Intent Router)
-        workflow.add_edge("detect_language", "detect_intent")
-        
+
+        # Language -> Filter Detection -> Intent Detection
+        workflow.add_edge("detect_language", "detect_filters")
+        workflow.add_edge("detect_filters", "detect_intent")
+
         # Intent Router -> Conditional routing según nueva arquitectura
         workflow.add_conditional_edges(
             "detect_intent",
             self._route_by_intent,
             {
+                "GREETING": "greeting_response",    # Saludo → Welcome Message
                 "FACTUAL": "factual_response",      # Información específica → RAG
                 "PLAN": "plan_response",            # Adaptar/implementar → Workshop
-                "IDEATE": "ideate_response",        # Nuevas ideas → Brainstorming  
+                "IDEATE": "ideate_response",        # Nuevas ideas → Brainstorming
                 "SENSITIVE": "sensitive_response",  # Temas sensibles → Safe Edge
                 "AMBIGUOUS": "clarify_response"     # Input ambiguo → Fallback
             }
         )
-        
+
         # Finalizaciones
+        workflow.add_edge("greeting_response", END)
         workflow.add_edge("factual_response", END)
         workflow.add_edge("plan_response", END)
         workflow.add_edge("ideate_response", END)
         workflow.add_edge("sensitive_response", END)
         workflow.add_edge("clarify_response", END)
-        
+
         return workflow
     
     def _language_node(self, state: GraphState) -> GraphState:
         """Nodo de detección de idioma."""
         agent_state = AgentState(user_input=state["user_input"])
         result = self.language_agent.process(agent_state)
-        
+
         return {
             **state,
             "language": result.language,
             "language_config": result.language_config,
             "debug_info": result.debug_info or {}
+        }
+
+    def _filter_node(self, state: GraphState) -> GraphState:
+        """Nodo de detección de filtros (NEW)."""
+        agent_state = AgentState(
+            user_input=state["user_input"],
+            language=state["language"],
+            language_config=state["language_config"]
+        )
+        result = self.filter_agent.process(agent_state)
+
+        debug_info = state.get("debug_info", {})
+        if result.debug_info:
+            debug_info.update(result.debug_info)
+
+        # Extraer metadata con filtros detectados
+        metadata = result.metadata if result.metadata else {}
+
+        return {
+            **state,
+            "metadata": metadata,
+            "debug_info": debug_info
         }
     
     def _intent_node(self, state: GraphState) -> GraphState:
@@ -116,7 +147,8 @@ class AgentOrchestrator:
         agent_state = AgentState(
             user_input=state["user_input"],
             language=state["language"],
-            language_config=state["language_config"]
+            language_config=state["language_config"],
+            metadata=state.get("metadata", {})
         )
         result = self.mode_agent.process(agent_state)
         
@@ -137,7 +169,8 @@ class AgentOrchestrator:
             user_input=state["user_input"],
             language=state["language"],
             language_config=state["language_config"],
-            mode=state["mode"]
+            mode=state["mode"],
+            metadata=state.get("metadata", {})
         )
         result = self.rag_agent.process(agent_state)
         
@@ -158,7 +191,8 @@ class AgentOrchestrator:
             user_input=state["user_input"],
             language=state["language"],
             language_config=state["language_config"],
-            mode=state["mode"]
+            mode=state["mode"],
+            metadata=state.get("metadata", {})
         )
         result = self.workshop_agent.process(agent_state)
         
@@ -179,7 +213,8 @@ class AgentOrchestrator:
             user_input=state["user_input"],
             language=state["language"],
             language_config=state["language_config"],
-            mode=state["mode"]
+            mode=state["mode"],
+            metadata=state.get("metadata", {})
         )
         result = self.brainstorming_agent.process(agent_state)
         
@@ -224,41 +259,57 @@ class AgentOrchestrator:
             mode=state["mode"]
         )
         result = self.fallback_agent.process(agent_state)
-        
+
         debug_info = state.get("debug_info", {})
         if result.debug_info:
             debug_info.update(result.debug_info)
-        
+
         return {
             **state,
             "response": result.response,
             "sources": result.sources or [],
             "debug_info": debug_info
         }
-    
+
+    def _greeting_node(self, state: GraphState) -> GraphState:
+        """Nodo GREETING - responde con mensaje de bienvenida según idioma."""
+        language_code = state.get("language", "es")
+        welcome_msg = get_welcome_message(language_code)
+
+        logger.info(f"👋 Greeting detected - sending welcome message in {language_code}")
+
+        return {
+            **state,
+            "response": welcome_msg,
+            "sources": [],
+            "debug_info": state.get("debug_info", {})
+        }
+
     def _route_by_intent(self, state: GraphState) -> str:
         """
         Rutea según el intent detectado por el Intent Router.
-        
+
         INTENT ROUTER LOGIC:
+        - GREETING → If user is just saying hello/hi or starting conversation with simple greeting
         - PLAN → If user wants to adapt or implement something they already know (route to PLAN_AGENT)
-        - IDEATE → If user wants new ideas, variations, or inspiration (route to BRAINSTORM_AGENT) 
+        - IDEATE → If user wants new ideas, variations, or inspiration (route to BRAINSTORM_AGENT)
         - FACTUAL → If user seeks specific information, definitions, or facts
         - AMBIGUOUS → If input is unclear or broad, return clarification options
         - SENSITIVE → If topic involves gender, religion, family conflict, identity, trauma
         """
         intent = state.get("mode", "FACTUAL")  # Fallback a FACTUAL
-        
+
         logger.info(f"🎓 Intent Router: '{intent}' → Routing to appropriate educational agent")
-        
+
         # Return the intent key which maps to node names in conditional_edges
-        # The mapping is defined in _create_workflow() lines 84-90
+        # The mapping is defined in _create_workflow() lines 92-98
         return intent
     
     def _get_agent_type(self, intent: str) -> str:
         """Mapea intent a tipo de agente para claridad."""
         mapping = {
-            "PLAN": "planning_assistant",      # Workshop Agent  
+            "GREETING": "welcome_assistant",    # Welcome Message
+            "PLAN": "planning_assistant",      # Workshop Agent
             "IDEATE": "creative_guide",        # Brainstorming Agent
             "FACTUAL": "knowledge_base",       # RAG Agent
             "SENSITIVE": "safe_edge_handler",  # Safe Edge Agent
@@ -285,6 +336,7 @@ class AgentOrchestrator:
                 "user_input": user_input,
                 "language": None,
                 "language_config": {},
+                "metadata": {},         # NEW: metadata con filtros
                 "mode": None,           # Intent: PLAN/IDEATE/FACTUAL/AMBIGUOUS/SENSITIVE
                 "mode_confidence": 0.0,
                 "response": "",
@@ -292,7 +344,7 @@ class AgentOrchestrator:
                 "debug_info": {}
             }
             
-            # Ejecutar workflow educativo: Language → Intent Router → Agent
+            # Ejecutar workflow educativo: Language → Filter Detection → Intent Router → Agent
             final_state = self.app.invoke(initial_state)
             
             # Preparar respuesta educativa
